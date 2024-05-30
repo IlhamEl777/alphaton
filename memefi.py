@@ -313,39 +313,44 @@ def animate_energy_recharge(duration):
 tap_counts = {}
 def perform_upgrade(upgrade_type, headers):
     global upgrade_interval
+    upgrade_success = True
 
-    print(f"⏫ Upgrading {upgrade_type}... ", end="", flush=True)
-    time.sleep(1)
+    while upgrade_success:
+        print(f"⏫ Upgrading {upgrade_type}... ", end="", flush=True)
+        time.sleep(1)
 
-    response = requests.post(url, json=upgrade_payloads[upgrade_type], headers=headers)
-    response_data = response.json()
-    # print(response_data)
-    if response.status_code == 200 and 'errors' not in response_data:
-        print(f"\r✅ Sukses upgrade {upgrade_type}                ")  # Spasi tambahan untuk menimpa teks sebelumnya jika perlu
-    elif 'errors' in response_data:
-        error_message = response_data['errors'][0]['message']
-        if "You don't have enough coins to purchase this upgrade" in error_message:
-            print(f"\r❌ Gagal upgrade {upgrade_type}: Koin tidak cukup.")
-        elif "max upgrade level reached" in error_message:
-            print(f"\r❌ Gagal upgrade {upgrade_type}: Level upgrade max.")
-        elif "Unexpected error value" in error_message:
-            ms_before_next = int(response_data['errors'][0]['message'].split('msBeforeNext:')[1].split(',')[0].strip())
+        response = requests.post(url, json=upgrade_payloads[upgrade_type], headers=headers)
+        response_data = response.json()
 
-            hours = ms_before_next // 3600000
-            minutes = (ms_before_next % 3600000) // 60000
-            print(f"\r❌ Gagal upgrade {upgrade_type}: Upgrade berikutnya dalam: {hours} jam {minutes} menit")
-            if hours > 0 or minutes > 0:
-                upgrade_interval = 100
+        if response.status_code == 200 and 'errors' not in response_data:
+            print(f"\r✅ Sukses upgrade {upgrade_type}                ")  # Spasi tambahan untuk menimpa teks sebelumnya jika perlu
+        elif 'errors' in response_data:
+            error_message = response_data['errors'][0]['message']
+            if "You don't have enough coins to purchase this upgrade" in error_message:
+                print(f"\r❌ Gagal upgrade {upgrade_type}: Koin tidak cukup.")
+                upgrade_success = False
+            elif "max upgrade level reached" in error_message:
+                print(f"\r❌ Gagal upgrade {upgrade_type}: Level upgrade max.")
+                upgrade_success = False  # Stop upgrading if max level reached
+            elif "Unexpected error value" in error_message:
+                upgrade_success = False
+                ms_before_next = int(response_data['errors'][0]['message'].split('msBeforeNext:')[1].split(',')[0].strip())
+                hours = ms_before_next // 3600000
+                minutes = (ms_before_next % 3600000) // 60000
+                print(f"\r❌ Gagal upgrade {upgrade_type}: Upgrade berikutnya dalam: {hours} jam {minutes} menit")
+                if hours > 0 or minutes > 0:
+                    upgrade_interval = 100
+            else:
+                print(f"\r❌ Gagal upgrade {upgrade_type}, error: {response_data}")
+                upgrade_success = False  # Stop upgrading on other errors
         else:
-            print(f"\r❌ Gagal upgrade {upgrade_type}, error: {response_data}")
-    else:
-        print(f"\r❌ Gagal upgrade {upgrade_type}, status code: {response.status_code}")
+            print(f"\r❌ Gagal upgrade {upgrade_type}, status code: {response.status_code}")
+            upgrade_success = False  # Stop upgrading on failed status code
 
 
 
 
 def activate_energy_recharge_booster(headers):
-    # Memeriksa konfigurasi game untuk mendapatkan jumlah energi saat ini dan jumlah isi ulang energi
     response_config = requests.post(url, json=cek_stat, headers=headers)
     config_data = response_config.json()['data']['telegramGameGetConfig']
     current_refill_amount = config_data['freeBoosts']['currentRefillEnergyAmount']
@@ -400,19 +405,24 @@ def activate_energy_recharge_booster(headers):
         response = requests.post(url, json=recharge_booster_payload, headers=headers)
         if response.status_code == 200:
             response_data = response.json()
-            new_energy = response_data['data']['telegramGameActivateBooster']['currentEnergy']
-            print(f"\n🔋 Energi terisi. Energi saat ini: {new_energy}")
+            if response_data and 'data' in response_data and response_data['data'] and 'telegramGameActivateBooster' in response_data['data']:
+                new_energy = response_data['data']['telegramGameActivateBooster']['currentEnergy']
+                print(f"\n🔋 Energi terisi. Energi saat ini: {new_energy}")
+            else:
+                print("❌ Gagal mengaktifkan Recharge Booster: Data tidak lengkap atau tidak ada.")
         else:
             print("❌ Gagal mengaktifkan Recharge Booster.")
     else:
         print("❌ Kondisi tidak memenuhi untuk mengaktifkan Recharge Booster.")
+
+
 turbo_activated = False
 def activate_turbo_boost(headers):
     # Memeriksa konfigurasi game untuk mendapatkan jumlah turbo saat ini
     global turbo_activated
+    print(f"Turbo Status: {turbo_activated}"  )
     print("\n🚀 Mengaktifkan Turbo Boost ... ", end="", flush=True)
-    time.sleep(2)
-
+    
     response_config = make_request(url, headers, cek_stat)
     config_data = response_config.json()['data']['telegramGameGetConfig']
     current_turbo = config_data['freeBoosts']['currentTurboAmount']
@@ -484,7 +494,7 @@ def activate_turbo_boost(headers):
                     print(f"\n🚀 Turbo terakhir diaktifkan pada: {formatted_time}")
                     # Mengubah tapsCount menjadi 500 dan melakukan 5x taps tanpa jeda
                     tap_payload['variables']['payload']['tapsCount'] = 5000
-                    for _ in range(10):
+                    for _ in range(20):
                         
                         tap_response = make_request(url, headers, tap_payload)
                         if tap_response.status_code == 200:
