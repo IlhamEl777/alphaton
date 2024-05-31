@@ -5,6 +5,7 @@ import pytz
 from datetime import datetime
 import random
 import string
+import json
 
 def generate_random_nonce(length=52):
     characters = string.ascii_letters + string.digits
@@ -29,7 +30,15 @@ def make_request(url, headers, json_payload):
     for i in range(retries):
         try:
             response = requests.post(url, headers=headers, json=json_payload)
-            return response
+            response.raise_for_status()  # Pastikan status code adalah 200
+            try:
+                return response.json()  # Coba mengurai sebagai JSON
+            except json.JSONDecodeError:
+                print(f"❌ Kesalahan saat mengurai JSON: Konten respons tidak valid.")
+                return None  # Kembalikan None jika tidak bisa diurai sebagai JSON
+        except requests.exceptions.HTTPError as e:
+            print(f"❌ Kesalahan HTTP: {e}, mencoba lagi dalam {delay} detik...")
+            time.sleep(delay)
         except requests.exceptions.ConnectionError as e:
             print(f"❌ Kesalahan Koneksi: {e}, mencoba lagi dalam {delay} detik...")
             time.sleep(delay)
@@ -37,7 +46,7 @@ def make_request(url, headers, json_payload):
             print(f"❌ Kesalahan Request: {e}, mencoba lagi dalam {delay} detik...")
             time.sleep(delay)
     print("❌ Gagal melakukan request setelah beberapa percobaan.")
-    return None 
+    return None
 
 
 # Load semua token
@@ -325,15 +334,16 @@ def perform_upgrade(upgrade_type, headers):
         if response.status_code == 200 and 'errors' not in response_data:
             print(f"\r✅ Sukses upgrade {upgrade_type}                ")  # Spasi tambahan untuk menimpa teks sebelumnya jika perlu
         elif 'errors' in response_data:
+            upgrade_success = False
             error_message = response_data['errors'][0]['message']
             if "You don't have enough coins to purchase this upgrade" in error_message:
                 print(f"\r❌ Gagal upgrade {upgrade_type}: Koin tidak cukup.")
-                upgrade_success = False
+                # upgrade_success = False
             elif "max upgrade level reached" in error_message:
                 print(f"\r❌ Gagal upgrade {upgrade_type}: Level upgrade max.")
-                upgrade_success = False  # Stop upgrading if max level reached
+                # upgrade_success = False  # Stop upgrading if max level reached
             elif "Unexpected error value" in error_message:
-                upgrade_success = False
+                # upgrade_success = False
                 ms_before_next = int(response_data['errors'][0]['message'].split('msBeforeNext:')[1].split(',')[0].strip())
                 hours = ms_before_next // 3600000
                 minutes = (ms_before_next % 3600000) // 60000
