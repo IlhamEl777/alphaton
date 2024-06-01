@@ -5,7 +5,6 @@ import pytz
 from datetime import datetime
 import random
 import string
-import json
 
 def generate_random_nonce(length=52):
     characters = string.ascii_letters + string.digits
@@ -30,25 +29,15 @@ def make_request(url, headers, json_payload):
     for i in range(retries):
         try:
             response = requests.post(url, headers=headers, json=json_payload)
-            response.raise_for_status()  # Pastikan status code adalah 200
-            try:
-                return response.json()  # Coba mengurai sebagai JSON
-            except json.JSONDecodeError:
-                print(f"❌ Kesalahan saat mengurai JSON: Konten respons tidak valid.")
-                return None  # Kembalikan None jika tidak bisa diurai sebagai JSON
-        except requests.exceptions.HTTPError as e:
-            print(f"❌ Kesalahan HTTP: {e}, mencoba lagi dalam {delay} detik...")
+            if response.status_code == 200:
+                return response
+            else:
+                print(f"❌ Gagal dengan status {response.status_code}, mencoba lagi dalam {delay} detik...")
+                time.sleep(delay)
+        except Exception as e:
+            print(f"❌ Kesalahan koneksi: {e}, mencoba lagi dalam {delay} detik...")
             time.sleep(delay)
-        except requests.exceptions.ConnectionError as e:
-            print(f"❌ Kesalahan Koneksi: {e}, mencoba lagi dalam {delay} detik...")
-            time.sleep(delay)
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Kesalahan Request: {e}, mencoba lagi dalam {delay} detik...")
-            time.sleep(delay)
-    print("❌ Gagal melakukan request setelah beberapa percobaan.")
     return None
-
-
 # Load semua token
 tokens = load_tokens('token.txt')
 
@@ -680,6 +669,10 @@ def check_and_complete_tasks(account_number, headers):
                 """
             }
             view_response = requests.post(url, json=view_task_payload, headers=headers)
+           
+            if view_response.status_code != 200 or 'data' not in view_response.json():
+                print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
+                continue  # Skip ke task berikutnya jika terjadi kesalahan
             view_result = view_response.json()
             task_details = view_result['data']['campaignTaskGetConfig']
             print(f"\r🔍 Detail Task: {task_details['name']}", end="", flush=True)
@@ -810,8 +803,12 @@ def print_user_details_once(tokens):
 def perform_operations(account_number, token, auto_upgrade, auto_booster):
     user_data = check_token_validity(token)
     
-    first_name = user_data['firstName']
-    last_name = user_data['lastName']
+    if user_data is None:
+        print(f"\r❌ Akun {account_number + 1} | Token tidak valid.", flush=True)
+        return
+    first_name = user_data.get('firstName', 'Unknown')
+    last_name = user_data.get('lastName', 'Unknown')
+
     
   
     global tap_count, upgrade_interval, turbo_activated
