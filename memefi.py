@@ -674,8 +674,13 @@ def check_and_complete_tasks(account_number, headers):
                 print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
                 continue  # Skip ke task berikutnya jika terjadi kesalahan
             view_result = view_response.json()
-            task_details = view_result['data']['campaignTaskGetConfig']
-            print(f"\r🔍 Detail Task: {task_details['name']}", end="", flush=True)
+            if 'errors'  in view_result:
+                print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
+                # continue  # Skip ke task berikutnya jika terjadi kesalahan
+            else:
+                task_details = view_result['data']['campaignTaskGetConfig']
+                print(f"\r🔍 Detail Task: {task_details['name']}", end="", flush=True)
+
 
             time.sleep(2)  # Jeda 5 detik setelah melihat detail
 
@@ -713,6 +718,7 @@ def check_and_complete_tasks(account_number, headers):
             }
             verify_response = requests.post(url, json=verify_task_payload, headers=headers)
             verify_result = verify_response.json()
+            
             if 'errors' not in verify_result:
                 print(f"\r✅ {task['name']} | Moved to Verification", flush=True)
             else:
