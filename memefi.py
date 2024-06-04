@@ -48,7 +48,7 @@ async def fetch(account_line):
                     "allows_write_to_pm": user_data_dict["allows_write_to_pm"],
                     "first_name": user_data_dict["first_name"],
                     "last_name": user_data_dict["last_name"],
-                    "username": user_data_dict["username"],
+                    "username": user_data_dict.get("username", "Username gak diset"),
                     "language_code": user_data_dict["language_code"],
                     "version": "7.2",
                     "platform": "ios"
