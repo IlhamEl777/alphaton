@@ -1,782 +1,341 @@
-import requests
-import time
+import aiohttp
+import asyncio
+import json
 import os
 import pytz
-from datetime import datetime
 import random
 import string
+import time
+from datetime import datetime
+from urllib.parse import unquote
+from utils.headers import headers_set
+from utils.queries import QUERY_USER, QUERY_LOGIN, MUTATION_GAME_PROCESS_TAPS_BATCH
+from utils.queries import QUERY_TASK_VERIF, QUERY_TASK_COMPLETED, QUERY_GET_TASK, QUERY_TASK_ID, QUERY_GAME_CONFIG
+
+url = "https://api-gw-tg.memefi.club/graphql"
 
 def generate_random_nonce(length=52):
     characters = string.ascii_letters + string.digits
     return ''.join(random.choice(characters) for _ in range(length))
 
-nonce_value = generate_random_nonce()
-# Fungsi untuk membaca token dari file
-def load_tokens(filename):
-    with open(filename, 'r') as file:
-        return [line.strip() for line in file.readlines()]
 
-# Fungsi untuk melakukan request dengan token yang sesuai
-def make_request(url, headers, json_payload):
-    headers.update({
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-    })
-    retries = 50  # Jumlah maksimal percobaan
-    delay = 3    # Jeda dalam detik
+# Mendapatkan akses token
+async def fetch(account_line):
+    with open('query_id.txt', 'r') as file:
+        lines = file.readlines()
+        raw_data = lines[account_line - 1].strip()
 
-    for i in range(retries):
-        try:
-            response = requests.post(url, headers=headers, json=json_payload)
-            if response.status_code == 200:
-                return response
-            else:
-                print(f"❌ Gagal dengan status {response.status_code}, mencoba lagi dalam {delay} detik...")
-                time.sleep(delay)
-        except Exception as e:
-            print(f"❌ Kesalahan koneksi: {e}, mencoba lagi dalam {delay} detik...")
-            time.sleep(delay)
-    return None
-# Load semua token
-tokens = load_tokens('token.txt')
+    tg_web_data = unquote(unquote(raw_data))
+    query_id = tg_web_data.split('query_id=', maxsplit=1)[1].split('&user', maxsplit=1)[0]
+    user_data = tg_web_data.split('user=', maxsplit=1)[1].split('&auth_date', maxsplit=1)[0]
+    auth_date = tg_web_data.split('auth_date=', maxsplit=1)[1].split('&hash', maxsplit=1)[0]
+    hash_ = tg_web_data.split('hash=', maxsplit=1)[1].split('&', maxsplit=1)[0]
 
-# URL dan endpoint yang sama untuk semua request
-url = "https://api-gw-tg.memefi.club/graphql"
+    user_data_dict = json.loads(unquote(user_data))
 
-# Inisialisasi variabel untuk menghitung akun
-account_number = 0
-
-# Query untuk mendapatkan konfigurasi game
-cek_stat = {
-    "operationName": "QUERY_GAME_CONFIG",
-    "variables": {},
-    "query": """
-    query QUERY_GAME_CONFIG {
-      telegramGameGetConfig {
-        ...FragmentBossFightConfig
-        __typename
-      }
-    }
-
-    fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-      _id
-      coinsAmount
-      currentEnergy
-      maxEnergy
-      weaponLevel
-      energyLimitLevel
-      energyRechargeLevel
-      tapBotLevel
-      currentBoss {
-        _id
-        level
-        currentHealth
-        maxHealth
-        __typename
-      }
-      freeBoosts {
-        _id
-        currentTurboAmount
-        maxTurboAmount
-        turboLastActivatedAt
-        turboAmountLastRechargeDate
-        currentRefillEnergyAmount
-        maxRefillEnergyAmount
-        refillEnergyLastActivatedAt
-        refillEnergyAmountLastRechargeDate
-        __typename
-      }
-      bonusLeaderDamageEndAt
-      bonusLeaderDamageStartAt
-      bonusLeaderDamageMultiplier
-      nonce
-      __typename
-    }
-    """
-}
-
-tap_payload = {
-    "operationName": "MutationGameProcessTapsBatch",
-    "variables": {
-        "payload": {
-            "nonce": ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(52)),
-            "tapsCount": 50
-        }
-    },
-    "query": """
-    mutation MutationGameProcessTapsBatch($payload: TelegramGameTapsBatchInput!) {
-      telegramGameProcessTapsBatch(payload: $payload) {
-        ...FragmentBossFightConfig
-        __typename
-      }
-    }
-
-    fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-      _id
-      coinsAmount
-      currentEnergy
-      maxEnergy
-      weaponLevel
-      energyLimitLevel
-      energyRechargeLevel
-      tapBotLevel
-      currentBoss {
-        _id
-        level
-        currentHealth
-        maxHealth
-        __typename
-      }
-      freeBoosts {
-        _id
-        currentTurboAmount
-        maxTurboAmount
-        turboLastActivatedAt
-        turboAmountLastRechargeDate
-        currentRefillEnergyAmount
-        maxRefillEnergyAmount
-        refillEnergyLastActivatedAt
-        refillEnergyAmountLastRechargeDate
-        __typename
-      }
-      bonusLeaderDamageEndAt
-      bonusLeaderDamageStartAt
-      bonusLeaderDamageMultiplier
-      nonce
-      __typename
-    }
-    """
-}
-
-upgrade_payloads = {
-    "wp": {
-        "operationName": "telegramGamePurchaseUpgrade",
-        "variables": {"upgradeType": "Damage"},
-        "query": """
-        mutation telegramGamePurchaseUpgrade($upgradeType: UpgradeType!) {
-          telegramGamePurchaseUpgrade(type: $upgradeType) {
-            ...FragmentBossFightConfig
-            __typename
-          }
-        }
-        fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-          _id
-          coinsAmount
-          currentEnergy
-          maxEnergy
-          weaponLevel
-          energyLimitLevel
-          energyRechargeLevel
-          tapBotLevel
-          currentBoss {
-            _id
-            level
-            currentHealth
-            maxHealth
-            __typename
-          }
-          freeBoosts {
-            _id
-            currentTurboAmount
-            maxTurboAmount
-            turboLastActivatedAt
-            turboAmountLastRechargeDate
-            currentRefillEnergyAmount
-            maxRefillEnergyAmount
-            refillEnergyLastActivatedAt
-            refillEnergyAmountLastRechargeDate
-            __typename
-          }
-          bonusLeaderDamageEndAt
-          bonusLeaderDamageStartAt
-          bonusLeaderDamageMultiplier
-          nonce
-          __typename
-        }
-        """
-    },
-    "energy": {
-        "operationName": "telegramGamePurchaseUpgrade",
-        "variables": {"upgradeType": "EnergyCap"},
-        "query": """
-        mutation telegramGamePurchaseUpgrade($upgradeType: UpgradeType!) {
-          telegramGamePurchaseUpgrade(type: $upgradeType) {
-            ...FragmentBossFightConfig
-            __typename
-          }
-        }
-        fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-          _id
-          coinsAmount
-          currentEnergy
-          maxEnergy
-          weaponLevel
-          energyLimitLevel
-          energyRechargeLevel
-          tapBotLevel
-          currentBoss {
-            _id
-            level
-            currentHealth
-            maxHealth
-            __typename
-          }
-          freeBoosts {
-            _id
-            currentTurboAmount
-            maxTurboAmount
-            turboLastActivatedAt
-            turboAmountLastRechargeDate
-            currentRefillEnergyAmount
-            maxRefillEnergyAmount
-            refillEnergyLastActivatedAt
-            refillEnergyAmountLastRechargeDate
-            __typename
-          }
-          bonusLeaderDamageEndAt
-          bonusLeaderDamageStartAt
-          bonusLeaderDamageMultiplier
-          nonce
-          __typename
-        }
-        """
-    },
-    "recharging": {
-        "operationName": "telegramGamePurchaseUpgrade",
-        "variables": {"upgradeType": "EnergyRechargeRate"},
-        "query": """
-        mutation telegramGamePurchaseUpgrade($upgradeType: UpgradeType!) {
-          telegramGamePurchaseUpgrade(type: $upgradeType) {
-            ...FragmentBossFightConfig
-            __typename
-          }
-        }
-        fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-          _id
-          coinsAmount
-          currentEnergy
-          maxEnergy
-          weaponLevel
-          energyLimitLevel
-          energyRechargeLevel
-          tapBotLevel
-          currentBoss {
-            _id
-            level
-            currentHealth
-            maxHealth
-            __typename
-          }
-          freeBoosts {
-            _id
-            currentTurboAmount
-            maxTurboAmount
-            turboLastActivatedAt
-            turboAmountLastRechargeDate
-            currentRefillEnergyAmount
-            maxRefillEnergyAmount
-            refillEnergyLastActivatedAt
-            refillEnergyAmountLastRechargeDate
-            __typename
-          }
-          bonusLeaderDamageEndAt
-          bonusLeaderDamageStartAt
-          bonusLeaderDamageMultiplier
-          nonce
-          __typename
-        }
-        """
-    }
-}
-
-
-def clear_console():
-    # Clear the console based on the operating system
-    if os.name == 'nt':
-        os.system('cls')
-    else:
-        os.system('clear')
-
-def animate_energy_recharge(duration):
-    frames = ["|", "/", "-", "\\"]
-    end_time = time.time() + duration
-    while time.time() < end_time:
-        for frame in frames:
-            print(f"\r🪫 Recharging energy {frame}", end="", flush=True)
-            time.sleep(0.25)
-    print("\r🔋 Energy recharge complete. ", flush=True)
-
-
-tap_counts = {}
-def perform_upgrade(upgrade_type, headers):
-    global upgrade_interval
-    upgrade_success = True
-
-    while upgrade_success:
-        print(f"⏫ Upgrading {upgrade_type}... ", end="", flush=True)
-        time.sleep(1)
-
-        response = requests.post(url, json=upgrade_payloads[upgrade_type], headers=headers)
-        response_data = response.json()
-
-        if response.status_code == 200 and 'errors' not in response_data:
-            print(f"\r✅ Sukses upgrade {upgrade_type}                ")  # Spasi tambahan untuk menimpa teks sebelumnya jika perlu
-        elif 'errors' in response_data:
-            upgrade_success = False
-            error_message = response_data['errors'][0]['message']
-            if "You don't have enough coins to purchase this upgrade" in error_message:
-                print(f"\r❌ Gagal upgrade {upgrade_type}: Koin tidak cukup.")
-                # upgrade_success = False
-            elif "max upgrade level reached" in error_message:
-                print(f"\r❌ Gagal upgrade {upgrade_type}: Level upgrade max.")
-                # upgrade_success = False  # Stop upgrading if max level reached
-            elif "Unexpected error value" in error_message:
-                # upgrade_success = False
-                ms_before_next = int(response_data['errors'][0]['message'].split('msBeforeNext:')[1].split(',')[0].strip())
-                hours = ms_before_next // 3600000
-                minutes = (ms_before_next % 3600000) // 60000
-                print(f"\r❌ Gagal upgrade {upgrade_type}: Upgrade berikutnya dalam: {hours} jam {minutes} menit")
-                if hours > 0 or minutes > 0:
-                    upgrade_interval = 100
-            else:
-                print(f"\r❌ Gagal upgrade {upgrade_type}, error: {response_data}")
-                upgrade_success = False  # Stop upgrading on other errors
-        else:
-            print(f"\r❌ Gagal upgrade {upgrade_type}, status code: {response.status_code}")
-            upgrade_success = False  # Stop upgrading on failed status code
-
-
-
-
-def activate_energy_recharge_booster(headers):
-    response_config = requests.post(url, json=cek_stat, headers=headers)
-    config_data = response_config.json()['data']['telegramGameGetConfig']
-    current_refill_amount = config_data['freeBoosts']['currentRefillEnergyAmount']
- 
-    if current_refill_amount > 0:
-        recharge_booster_payload = {
-            "operationName": "telegramGameActivateBooster",
-            "variables": {"boosterType": "Recharge"},
-            "query": """
-            mutation telegramGameActivateBooster($boosterType: BoosterType!) {
-              telegramGameActivateBooster(boosterType: $boosterType) {
-                ...FragmentBossFightConfig
-                __typename
-              }
+    url = 'https://api-gw-tg.memefi.club/graphql'
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    data = {
+        "operationName": "MutationTelegramUserLogin",
+        "variables": {
+            "webAppData": {
+                "auth_date": int(auth_date),
+                "hash": hash_,
+                "query_id": query_id,
+                "checkDataString": f"auth_date={auth_date}\nquery_id={query_id}\nuser={unquote(user_data)}",
+                "user": {
+                    "id": user_data_dict["id"],
+                    "allows_write_to_pm": user_data_dict["allows_write_to_pm"],
+                    "first_name": user_data_dict["first_name"],
+                    "last_name": user_data_dict["last_name"],
+                    "username": user_data_dict["username"],
+                    "language_code": user_data_dict["language_code"],
+                    "version": "7.2",
+                    "platform": "ios"
+                }
             }
-            fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-              _id
-              coinsAmount
-              currentEnergy
-              maxEnergy
-              weaponLevel
-              energyLimitLevel
-              energyRechargeLevel
-              tapBotLevel
-              currentBoss {
-                _id
-                level
-                currentHealth
-                maxHealth
-                __typename
-              }
-              freeBoosts {
-                _id
-                currentTurboAmount
-                maxTurboAmount
-                turboLastActivatedAt
-                turboAmountLastRechargeDate
-                currentRefillEnergyAmount
-                maxRefillEnergyAmount
-                refillEnergyLastActivatedAt
-                refillEnergyAmountLastRechargeDate
-                __typename
-              }
-              bonusLeaderDamageEndAt
-              bonusLeaderDamageStartAt
-              bonusLeaderDamageMultiplier
-              nonce
-              __typename
-            }
-            """
-        }
-        response = requests.post(url, json=recharge_booster_payload, headers=headers)
-        if response.status_code == 200:
-            response_data = response.json()
-            if response_data and 'data' in response_data and response_data['data'] and 'telegramGameActivateBooster' in response_data['data']:
-                new_energy = response_data['data']['telegramGameActivateBooster']['currentEnergy']
-                print(f"\n🔋 Energi terisi. Energi saat ini: {new_energy}")
-            else:
-                print("❌ Gagal mengaktifkan Recharge Booster: Data tidak lengkap atau tidak ada.")
-        else:
-            print("❌ Gagal mengaktifkan Recharge Booster.")
-    else:
-        print("❌ Kondisi tidak memenuhi untuk mengaktifkan Recharge Booster.")
+        },
+        "query": QUERY_LOGIN
+    }
 
-
-turbo_activated = False
-def activate_turbo_boost(headers):
-    # Memeriksa konfigurasi game untuk mendapatkan jumlah turbo saat ini
-    global turbo_activated
-    print(f"Turbo Status: {turbo_activated}"  )
-    print("\n🚀 Mengaktifkan Turbo Boost ... ", end="", flush=True)
-    
-    response_config = make_request(url, headers, cek_stat)
-    config_data = response_config.json()['data']['telegramGameGetConfig']
-    current_turbo = config_data['freeBoosts']['currentTurboAmount']
-    
-    if current_turbo > 0:
-        booster_payload = {
-            "operationName": "telegramGameActivateBooster",
-            "variables": {"boosterType": "Turbo"},
-            "query": """
-            mutation telegramGameActivateBooster($boosterType: BoosterType!) {
-              telegramGameActivateBooster(boosterType: $boosterType) {
-                ...FragmentBossFightConfig
-                __typename
-              }
-            }
-            fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-              _id
-              coinsAmount
-              currentEnergy
-              maxEnergy
-              weaponLevel
-              energyLimitLevel
-              energyRechargeLevel
-              tapBotLevel
-              currentBoss {
-                _id
-                level
-                currentHealth
-                maxHealth
-                __typename
-              }
-              freeBoosts {
-                _id
-                currentTurboAmount
-                maxTurboAmount
-                turboLastActivatedAt
-                turboAmountLastRechargeDate
-                currentRefillEnergyAmount
-                maxRefillEnergyAmount
-                refillEnergyLastActivatedAt
-                refillEnergyAmountLastRechargeDate
-                __typename
-              }
-              bonusLeaderDamageEndAt
-              bonusLeaderDamageStartAt
-              bonusLeaderDamageMultiplier
-              nonce
-              __typename
-            }
-            """
-        }
-        if turbo_activated == False:
-            response = make_request(url, headers, booster_payload)
-            turbo_activated = True
-            if response.status_code == 200:
-                response_data = response.json()
-
-                current_health = response_data['data']['telegramGameActivateBooster']['currentBoss']['currentHealth']
-                if current_health == 0:
-                    print("\nBos telah dikalahkan, mengatur bos berikutnya...")
-                    set_next_boss(headers)
-                    activate_turbo_boost(headers)
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=data) as response:
+            try:
+                json_response = await response.json()
+                if 'errors' in json_response:
+                    # print("Query ID Salah")
+                    return None
                 else:
-                    turbo_last_activated_at = response_data['data']['telegramGameActivateBooster']['freeBoosts']['turboLastActivatedAt']
-                    # Mengonversi waktu ke UTC+7
-                    utc_time = datetime.strptime(turbo_last_activated_at, "%Y-%m-%dT%H:%M:%S.%fZ")
-                    local_time = utc_time.replace(tzinfo=pytz.utc).astimezone(pytz.timezone('Asia/Jakarta'))
-                    formatted_time = local_time.strftime("%Y-%m-%d %H:%M:%S")
-                    print(f"\n🚀 Turbo terakhir diaktifkan pada: {formatted_time}")
-                    # Mengubah tapsCount menjadi 500 dan melakukan 5x taps tanpa jeda
-                    tap_payload['variables']['payload']['tapsCount'] = 5000
-                    for _ in range(20):
-                        
-                        tap_response = make_request(url, headers, tap_payload)
-                        if tap_response.status_code == 200:
-                            tap_data = tap_response.json()['data']['telegramGameProcessTapsBatch']
-                            if tap_data['currentBoss']['currentHealth'] == 0:
-                              print("\nBos telah dikalahkan, mengatur bos berikutnya...")
-                              set_next_boss(headers)
-                              activate_turbo_boost(headers)
-                            print(f"✅ Tapped. Coins 🪙: {tap_data['coinsAmount']}, Monster ⚔️: {tap_data['currentBoss']['currentHealth']} - {tap_data['currentBoss']['maxHealth']}")
+                    access_token = json_response['data']['telegramUserLogin']['access_token']
+                    return access_token
+            except aiohttp.ContentTypeError:
+                print("Failed to decode JSON response")
+                return None
 
-                        else:
-                            print("❌ Gagal melakukan tapping.")
-            else:
-                print("❌ Gagal mengaktifkan Turbo Boost.")
-                tap_payload['variables']['payload']['tapsCount'] = 5000
-                for _ in range(10):             
-                        tap_response = make_request(url, headers, tap_payload)
-                        if tap_response.status_code == 200:
-                            tap_data = tap_response.json()['data']['telegramGameProcessTapsBatch']
-                            if tap_data['currentBoss']['currentHealth'] == 0:
-                              print("\nBos telah dikalahkan, mengatur bos berikutnya...")
-                              set_next_boss(headers)
-                              activate_turbo_boost(headers)
-                            print(f"✅ Tapped. Coins 🪙: {tap_data['coinsAmount']}, Monster ⚔️: {tap_data['currentBoss']['currentHealth']} - {tap_data['currentBoss']['maxHealth']}")
-                        else:
-                            print("❌ Gagal melakukan tapping.")
+# Cek akses token
+async def cek_user(index):
+    access_token = await fetch(index + 1)
+    url = "https://api-gw-tg.memefi.club/graphql"
 
-        else:
-            print("❌ Turbo boost sudah diaktifkan.")
-
-
-        
-    else:
-        print("❌ Turbo Boost tidak tersedia.")
-
-def set_next_boss(headers):
-    next_boss_payload = {
-        "operationName": "telegramGameSetNextBoss",
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    headers['Authorization'] = f'Bearer {access_token}'
+    
+    json_payload = {
+        "operationName": "QueryTelegramUserMe",
         "variables": {},
-        "query": """
-        mutation telegramGameSetNextBoss {
-          telegramGameSetNextBoss {
-            ...FragmentBossFightConfig
-            __typename
-          }
-        }
-        fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-          _id
-          coinsAmount
-          currentEnergy
-          maxEnergy
-          weaponLevel
-          energyLimitLevel
-          energyRechargeLevel
-          tapBotLevel
-          currentBoss {
-            _id
-            level
-            currentHealth
-            maxHealth
-            __typename
-          }
-          freeBoosts {
-            _id
-            currentTurboAmount
-            maxTurboAmount
-            turboLastActivatedAt
-            turboAmountLastRechargeDate
-            currentRefillEnergyAmount
-            maxRefillEnergyAmount
-            refillEnergyLastActivatedAt
-            refillEnergyAmountLastRechargeDate
-            __typename
-          }
-          bonusLeaderDamageEndAt
-          bonusLeaderDamageStartAt
-          bonusLeaderDamageMultiplier
-          nonce
-          __typename
-        }
-        """
+        "query": QUERY_USER
     }
-    next_boss_response = requests.post(url, json=next_boss_payload, headers=headers)
-    if next_boss_response.status_code == 200:
-        print("✅ Berhasil ganti bos.", flush=True)
-    else:
-        print("❌ Gagal ganti bos.", flush=True)
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=json_payload) as response:
+            if response.status == 200:
+                response_data = await response.json()
+                if 'errors' in response_data:
+                    print(f"❌ Gagal Query ID Salah")
+                    return None
+                else:
+                    user_data = response_data['data']['telegramUserMe']
+                    return user_data  # Mengembalikan hasil response
+            else:
+                print(response)
+                print(f"❌ Gagal dengan status {response.status}, mencoba lagi...")
+                return None  # Mengembalikan None jika terjadi error
 
-# Dictionary global untuk menyimpan status penyelesaian tugas setiap akun
-tasks_completed = {}
-def check_and_complete_tasks(account_number, headers):
-    if tasks_completed.get(account_number, False):
-        # print(f"[ Akun {account_number + 1} ] Semua tugas telah selesai. Tidak perlu cek lagi. ✅")
-        return True
+async def submit_taps(index, json_payload):
+    access_token = await fetch(index + 1)
+    url = "https://api-gw-tg.memefi.club/graphql"
+
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    headers['Authorization'] = f'Bearer {access_token}'
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=json_payload) as response:
+            if response.status == 200:
+                response_data = await response.json()
+                return response_data  # Mengembalikan hasil response
+            else:
+                # print(f"❌ Gagal dengan status {response.status}, mencoba lagi...")
+                return response  # Mengembalikan respons error
+
+# cek stat
+async def cek_stat(index,headers):
+    access_token = await fetch(index + 1)
+    url = "https://api-gw-tg.memefi.club/graphql"
+
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    headers['Authorization'] = f'Bearer {access_token}'
+    
+    json_payload = {
+        "operationName": "QUERY_GAME_CONFIG",
+        "variables": {},
+        "query": QUERY_GAME_CONFIG
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=json_payload) as response:
+            if response.status == 200:
+                response_data = await response.json()
+                if 'errors' in response_data:
+                    return None
+                else:
+                    user_data = response_data['data']['telegramGameGetConfig']
+                    return user_data
+            else:
+                print(response)
+                print(f"❌ Gagal dengan status {response.status}, mencoba lagi...")
+                return None, None  # Mengembalikan None jika terjadi error
+
+
+
+
+async def check_and_complete_tasks(index, headers):
+    # if tasks_completed.get(account_number, False):
+    #     print(f"[ Akun {account_number + 1} ] Semua tugas telah selesai. Tidak perlu cek lagi. ✅")
+    #     return True
+    access_token = await fetch(index + 1)
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    headers['Authorization'] = f'Bearer {access_token}'
     task_list_payload = {
         "operationName": "GetTasksList",
         "variables": {"campaignId": "50ef967e-dd9b-4bd8-9a19-5d79d7925454"},
-        "query": """
-        fragment FragmentCampaignTask on CampaignTaskOutput {
-          id
-          name
-          description
-          status
-          type
-          position
-          buttonText
-          coinsRewardAmount
-          link
-          userTaskId
-          isRequired
-          iconUrl
-          __typename
-        }
-
-        query GetTasksList($campaignId: String!) {
-          campaignTasks(campaignConfigId: $campaignId) {
-            ...FragmentCampaignTask
-            __typename
-          }
-        }
-        """
+        "query": QUERY_GET_TASK
     }
-    response = requests.post(url, json=task_list_payload, headers=headers)
-    tasks = response.json()['data']['campaignTasks']
-    all_completed = all(task['status'] == 'Completed' for task in tasks)
-    
-    if all_completed:
-        tasks_completed[account_number] = True
-        print(f"\n[ Akun {account_number + 1} ] Semua tugas telah selesai. ✅")
-        return  True# Keluar dari fungsi jika semua tugas telah selesai
 
-    
-    print(f"\n[ Akun {account_number + 1} ]\nList Task:\n")
-    for task in tasks:
-        print(f"{task['name']} | {task['status']}")
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=task_list_payload, headers=headers) as response:
+            if response.status != 200:
+                # Menampilkan status dan respons jika bukan 200 OK
+                print(f"❌ Gagal dengan status {response.status}")
+                print(await response.text())  # Menampilkan respons teks untuk debugging
+                return False
 
-        if task['name'] == "Follow telegram channel" and task['status'] == "Pending":
-            print(f"⏩ Skipping task: {task['name']}")
-            continue  # Skip task jika nama task adalah "Follow telegram channel" dan statusnya "Pending"
+            try:
+                tasks = await response.json()
+            except aiohttp.ContentTypeError:
+                print("Gagal mengurai JSON, cek respons server.")
+                return False
 
-        if task['status'] == "Pending":
-            # Melihat detail tugas
-            print(f"\r🔍 Viewing task: {task['name']}", end="", flush=True)
-            view_task_payload = {
-                "operationName": "GetTaskById",
+            # Lanjutkan dengan logika yang ada jika tidak ada error
+            all_completed = all(task['status'] == 'Completed' for task in tasks['data']['campaignTasks'])
+            if all_completed:
+                print(f"\r[ Akun {index + 1} ] Semua tugas telah selesai. ✅            ",flush=True)
+                return True
 
 
+            print(f"\n[ Akun {index + 1} ]\nList Task:\n")
+            for task in tasks['data']['campaignTasks']:
+                print(f"{task['name']} | {task['status']}")
 
-                "variables": {"taskId": task['id']},
-                "query": """
-                fragment FragmentCampaignTask on CampaignTaskOutput {
-                  id
-                  name
-                  description
-                  status
-                  type
-                  position
-                  buttonText
-                  coinsRewardAmount
-                  link
-                  userTaskId
-                  isRequired
-                  iconUrl
-                  __typename
-                }
+                if task['name'] == "Follow telegram channel" and task['status'] == "Pending":
+                    print(f"⏩ Skipping task: {task['name']}")
+                    continue  # Skip task jika nama task adalah "Follow telegram channel" dan statusnya "Pending"
 
-                query GetTaskById($taskId: String!) {
-                  campaignTaskGetConfig(taskId: $taskId) {
-                    ...FragmentCampaignTask
-                    __typename
-                  }
-                }
-                """
-            }
-            view_response = requests.post(url, json=view_task_payload, headers=headers)
-           
-            if view_response.status_code != 200 or 'data' not in view_response.json():
-                print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
-                continue  # Skip ke task berikutnya jika terjadi kesalahan
-            view_result = view_response.json()
-            if 'errors'  in view_result:
-                print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
-                # continue  # Skip ke task berikutnya jika terjadi kesalahan
-            else:
-                task_details = view_result['data']['campaignTaskGetConfig']
-                print(f"\r🔍 Detail Task: {task_details['name']}", end="", flush=True)
+                if task['status'] == "Pending":
+                    print(f"\r🔍 Viewing task: {task['name']}", end="", flush=True)
+                    view_task_payload = {
+                        "operationName": "GetTaskById",
+                        "variables": {"taskId": task['id']},
+                        "query": QUERY_TASK_ID
+                    }
+                    async with session.post(url, json=view_task_payload, headers=headers) as view_response:
+                        view_result = await view_response.json()
 
+                        if 'errors' in view_result:
+                            print(f"\r❌ Gagal mendapatkan detail task: {task['name']}")
+                        else:
+                            task_details = view_result['data']['campaignTaskGetConfig']
+                            print(f"\r🔍 Detail Task: {task_details['name']}", end="", flush=True)
 
-            time.sleep(2)  # Jeda 5 detik setelah melihat detail
+                    await asyncio.sleep(2)  # Jeda 2 detik setelah melihat detail
 
-            print(f"\r🔍 Verifikasi task: {task['name']}                                                                ", end="", flush=True)
-            # Memindahkan tugas ke verifikasi
-            verify_task_payload = {
+                    print(f"\r🔍 Verifikasi task: {task['name']}                                                                ", end="", flush=True)
+                    verify_task_payload = {
+                        "operationName": "CampaignTaskToVerification",
+                        "variables": {"userTaskId": task['userTaskId']},
+                        "query": QUERY_TASK_VERIF
+                    }
+                    async with session.post(url, json=verify_task_payload, headers=headers) as verify_response:
+                        verify_result = await verify_response.json()
 
+                        if 'errors' not in verify_result:
+                            print(f"\r✅ {task['name']} | Moved to Verification", flush=True)
+                        else:
+                            print(f"\r❌ {task['name']} | Failed to move to Verification", flush=True)
 
-                "operationName": "CampaignTaskToVerification",
-                "variables": {"userTaskId": task['userTaskId']},
-                "query": """
-                fragment FragmentCampaignTask on CampaignTaskOutput {
-                  id
-                  name
-                  description
-                  status
-                  type
-                  position
-                  buttonText
-                  coinsRewardAmount
-                  link
-                  userTaskId
-                  isRequired
-                  iconUrl
-                  __typename
-                }
+                    await asyncio.sleep(2)  # Jeda 2 detik setelah verifikasi
 
-                mutation CampaignTaskToVerification($userTaskId: String!) {
-                  campaignTaskMoveToVerification(userTaskId: $userTaskId) {
-                    ...FragmentCampaignTask
-                    __typename
-                  }
-                }
-                """
-            }
-            verify_response = requests.post(url, json=verify_task_payload, headers=headers)
-            verify_result = verify_response.json()
-            
-            if 'errors' not in verify_result:
-                print(f"\r✅ {task['name']} | Moved to Verification", flush=True)
-            else:
-                print(f"\r❌ {task['name']} | Failed to move to Verification", flush=True)
-            time.sleep(2)  # Jeda 5 detik setelah verifikasi
+            # Cek ulang task setelah memindahkan ke verification
+            async with session.post(url, json=task_list_payload, headers=headers) as response:
+                updated_tasks = await response.json()
 
-    # Cek ulang task setelah memindahkan ke verification
-    response = requests.post(url, json=task_list_payload, headers=headers)
-    updated_tasks = response.json()['data']['campaignTasks']
-    print("\nUpdated Task List After Verification:\n")
-    for task in updated_tasks:
-        print(f"{task['name']} | {task['status']}")
-        if task['status'] == "Verification":
-            # Menyelesaikan tugas yang telah diverifikasi
-            print(f"\r🔥 Menyelesaikan task: {task['name']}", end="", flush=True)
-            complete_task_payload = {
-                "operationName": "CampaignTaskCompleted",
+                print("\nUpdated Task List After Verification:\n")
+                for task in updated_tasks['data']['campaignTasks']:
+                    print(f"{task['name']} | {task['status']}")
+                    if task['status'] == "Verification":
+                        print(f"\r🔥 Menyelesaikan task: {task['name']}", end="", flush=True)
+                        complete_task_payload = {
+                            "operationName": "CampaignTaskCompleted",
+                            "variables": {"userTaskId": task['userTaskId']},
+                            "query": QUERY_TASK_COMPLETED
+                        }
+                        async with session.post(url, json=complete_task_payload, headers=headers) as complete_response:
+                            complete_result = await complete_response.json()
 
-                "variables": {"userTaskId": task['userTaskId']},
-                "query": """
-                fragment FragmentCampaignTask on CampaignTaskOutput {
-                  id
-                  name
-                  description
-                  status
-                  type
-                  position
-                  buttonText
-                  coinsRewardAmount
-                  link
-                  userTaskId
-                  isRequired
-                  iconUrl
-                  __typename
-                }
+                            if 'errors' not in complete_result:
+                                print(f"\r✅ {task['name']} | Completed                         ", flush=True)
+                            else:
+                                print(f"\r❌ {task['name']} | Failed to complete            ", flush=True)
+                    
+                    await asyncio.sleep(3)  # Jeda 3 detik setelah menyelesaikan tugas
 
-                mutation CampaignTaskCompleted($userTaskId: String!) {
-                  campaignTaskMarkAsCompleted(userTaskId: $userTaskId) {
-                    ...FragmentCampaignTask
-                    __typename
-                  }
-                }
-                """
-            }
-            complete_response = requests.post(url, json=complete_task_payload, headers=headers)
-            complete_result = complete_response.json()
-            if 'errors' not in complete_result:
-                print(f"\r✅ {task['name']} | Completed                         ", flush=True)
-            else:
-                print(f"\r❌ {task['name']} | Failed to complete            ", flush=True)
-
-                print(complete_result)
-            time.sleep(3)  # Jeda 5 detik setelah menyelesaikan tugas
     return False
 
-tap_count = 0
+async def main():
+    print("Starting Memefi bot...")
+    print("\r Mendapatkan list akun valid...", end="", flush=True)
+    while True:
+        with open('query_id.txt', 'r') as file:
+            lines = file.readlines()
 
+        # Kumpulkan informasi akun terlebih dahulu
+        accounts = []
+        for index, line in enumerate(lines):
+            result = await cek_user(index)
+            if result is not None:
+                first_name = result.get('firstName', 'Unknown')
+                last_name = result.get('lastName', 'Unknown')
+                league = result.get('league', 'Unknown')
+                accounts.append((index, result, first_name, last_name, league))
+            else:
+                print(f"❌ Akun {index + 1}: Token tidak valid atau terjadi kesalahan")
 
+        # Menampilkan daftar akun
+        print("\rList akun:                                   ",flush=True)
+        for index, _, first_name, last_name, league in accounts:
+            print(f"✅ [ Akun {first_name} {last_name} ] | League 🏆 {league}")
+
+        # Setelah menampilkan semua akun, mulai memeriksa tugas
+        for index, result, first_name, last_name, league in accounts:
+            
+            print(f"\r[ Akun {index + 1} ] {first_name} {last_name} memeriksa task...", end="", flush=True)
+            headers = {'Authorization': f'Bearer {result}'}
+            await check_and_complete_tasks(index, headers)
+            stat_result = await cek_stat(index, headers)
+
+            if stat_result is not None:
+                user_data = stat_result
+                output = (
+                    f"[ Akun {index + 1} - {first_name} {last_name} ]\n"
+                    f"Coin 🪙  {user_data['coinsAmount']} 🔋 {user_data['currentEnergy']} - {user_data['maxEnergy']}\n"
+                    f"Level 🔫 {user_data['weaponLevel']} 🔋 {user_data['energyLimitLevel']} ⚡ {user_data['energyRechargeLevel']} 🤖 {user_data['tapBotLevel']}\n"
+                    f"Boss 👾 {user_data['currentBoss']['level']} ❤️ {user_data['currentBoss']['currentHealth']} - {user_data['currentBoss']['maxHealth']}\n"
+                    f"Free 🚀 {user_data['freeBoosts']['currentTurboAmount']} 🔋 {user_data['freeBoosts']['currentRefillEnergyAmount']}\n"
+                        )
+                print(output, end="", flush=True)
+                print("\rTapping 👆", end="", flush=True)
+
+                energy_sekarang = user_data['currentEnergy']
+                energy_used = energy_sekarang - 100
+                damage = user_data['weaponLevel']+1
+                total_tap = energy_used // damage
+                
+                # auto_booster = 'y'
+                # print(total_tap)
+                # if total_tap < 5:
+                #     if energy_sekarang < 200:
+                #         if auto_booster == 'y':
+                #             if user_data['freeBoosts']['currentRefillEnergyAmount'] > 0:
+                #                 print("\r🪫 Energy Habis, mengaktifkan Recharge Booster... \n", end="", flush=True)
+                #                 # activate_energy_recharge_booster(headers)
+                #                 continue  # Lanjutkan tapping setelah recharge
+                #             else:
+                #                 print("\r🪫 Energy Habis, tidak ada booster tersedia. Beralih ke akun berikutnya.\n", flush=True)
+                #                 break
+                #         break
+                # else:
+                #     break
+
+                
+                tap_payload = {
+                        "operationName": "MutationGameProcessTapsBatch",
+                        "variables": {
+                            "payload": {
+                                "nonce": generate_random_nonce(),
+                                "tapsCount": total_tap
+                            }
+                        },
+                        "query": MUTATION_GAME_PROCESS_TAPS_BATCH
+                    }
+                tap_result = await submit_taps(index, tap_payload)
+                if tap_result is not None:
+                    print(f"\rTapped ✅\n ")
+                else:
+                    print(f"❌ Gagal dengan status {tap_result}, mencoba lagi...")
+        print("=== [ SEMUA AKUN TELAH DI PROSES ] ===")
+    
+        animate_energy_recharge(15)   
+        
+  
 def animate_energy_recharge(duration):
     frames = ["|", "/", "-", "\\"]
     end_time = time.time() + duration
@@ -785,304 +344,7 @@ def animate_energy_recharge(duration):
         for frame in frames:
             print(f"\r🪫 Mengisi ulang energi {frame} - Tersisa {remaining_time} detik         ", end="", flush=True)
             time.sleep(0.25)
-    print("\r🔋 Pengisian energi selesai.                            ", flush=True)
+    print("\r🔋 Pengisian energi selesai.                            ", flush=True)     
 
-printed_user_details = {}
-
-def print_user_details_once(tokens):
-    for index, token in enumerate(tokens):
-        print(f"\r ⏳ Pengecekan akun {index + 1}...", end="", flush=True)
-        time.sleep(1.5)
-        user_data = check_token_validity(token)
-        if not user_data:
-            print(f"\r❌ Akun {index + 1} | Token tidak valid.", flush=True)
-        else:
-            first_name = user_data['firstName']
-
-            last_name = user_data['lastName']
-            league = user_data['league']
-            print(f"\r✅ [ Akun {first_name} {last_name} ] | League 🏆 {league}", flush=True)
-            printed_user_details[index] = True
-
-
-
-def perform_operations(account_number, token, auto_upgrade, auto_booster):
-    user_data = check_token_validity(token)
-    
-    if user_data is None:
-        print(f"\r❌ Akun {account_number + 1} | Token tidak valid.", flush=True)
-        return
-    first_name = user_data.get('firstName', 'Unknown')
-    last_name = user_data.get('lastName', 'Unknown')
-
-    
-  
-    global tap_count, upgrade_interval, turbo_activated
-    turbo_activated = False
-       # Reset tap_count untuk akun ini jika belum ada
-    if account_number not in tap_counts:
-        tap_counts[account_number] = 0
-
-    token = tokens[account_number % len(tokens)]
-    headers = {
-        "Accept" : "*/*",
-        "Content-Length": "1035",
-        "Content-Type": "application/json",
-        "Priority": "u=1, i",
-        "Authorization": f"Bearer {token}",
-        "Origin": "https://tg-app.memefi.club",
-        "Referer": "https://tg-app.memefi.club/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Sec-Ch-Ua": "Google Chrome;v=\"125\", Chromium;v=\"125\", Not.A/Brand;v=\"24\"",
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": "Windows",
-        "Sec-Fetch-Dest" : "empty",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-site",
-    }
-
-
-    check_and_complete_tasks(account_number,headers)
-
-    while True:
-          # clear_console()
-          response_config = make_request(url, headers, cek_stat)
-          config_data = response_config.json()['data']['telegramGameGetConfig']
-          tap_counts[account_number] += 1  # Menambah tap_count untuk akun ini
-
-      
-          output = (
-              f"\n============\n"
-              f"[ Akun {account_number + 1} - {first_name} {last_name} ]\n"
-              f"Coin 🪙 {config_data['coinsAmount']} 🔋 {config_data['currentEnergy']} - {config_data['maxEnergy']}\n"
-              f"Level 🔫 {config_data['weaponLevel']} 🔋 {config_data['energyLimitLevel']} ⚡ {config_data['energyRechargeLevel']} 🤖 {config_data['tapBotLevel']}\n"
-              f"Boss 👾 {config_data['currentBoss']['level']} ❤️ {config_data['currentBoss']['currentHealth']} - {config_data['currentBoss']['maxHealth']}\n"
-
-              f"Free 🚀 {config_data['freeBoosts']['currentTurboAmount']} 🔋 {config_data['freeBoosts']['currentRefillEnergyAmount']}\n"
-          )
-
-
-          print(output, end="", flush=True)
-          print("\rTapping 👆", end="", flush=True)
-          # Ambil nilai currentEnergy dan weaponLevel dari config_data
-          
-          energy_sekarang = config_data['currentEnergy']
-          energy_used = energy_sekarang - 100
-          damage = config_data['weaponLevel']+1
-          # Hitung total_tap dengan pembagian bulat
-
-          total_tap = energy_used // damage
-
-          if total_tap < 5:
-            if energy_sekarang < 200:
-              if auto_booster == 'y':
-                if config_data['freeBoosts']['currentRefillEnergyAmount'] > 0:
-                  print("\r🪫 Energy Habis, mengaktifkan Recharge Booster... \n", end="", flush=True)
-                  activate_energy_recharge_booster(headers)
-                  continue  # Lanjutkan tapping setelah recharge
-                else:
-                  print("\r🪫 Energy Habis, tidak ada booster tersedia. Beralih ke akun berikutnya.\n", flush=True)
-                  break
-              break
-            else:
-                break
-
-      
-
-
-         
-          # print(f"Total tap: {total_tap}")
-          tap_payload['variables']['payload']['tapsCount'] = total_tap
-   
-          tap_request = make_request(url, headers, tap_payload)          
-          hasil = tap_request.json()
-          data_game = hasil['data']['telegramGameProcessTapsBatch']
-          current_energy = data_game['currentEnergy']
-          current_health = data_game['currentBoss']['currentHealth']
-          
-          if auto_booster == 'y':
-            if config_data['freeBoosts']['currentTurboAmount'] > 0:
-                activate_turbo_boost(headers)
-          if current_health == 0:
-            print("\nBos telah dikalahkan, mengatur bos berikutnya...", flush=True)
-            next_boss_payload = {
-                "operationName": "telegramGameSetNextBoss",
-                "variables": {},
-                "query": """
-                mutation telegramGameSetNextBoss {
-                  telegramGameSetNextBoss {
-                    ...FragmentBossFightConfig
-                    __typename
-                  }
-                }
-
-                fragment FragmentBossFightConfig on TelegramGameConfigOutput {
-                  _id
-                  coinsAmount
-                  currentEnergy
-                  maxEnergy
-                  weaponLevel
-                  energyLimitLevel
-                  energyRechargeLevel
-                  tapBotLevel
-                  currentBoss {
-                    _id
-                    level
-                    currentHealth
-                    maxHealth
-                    __typename
-                  }
-                  freeBoosts {
-                    _id
-                    currentTurboAmount
-                    maxTurboAmount
-                    turboLastActivatedAt
-                    turboAmountLastRechargeDate
-                    currentRefillEnergyAmount
-                    maxRefillEnergyAmount
-                    refillEnergyLastActivatedAt
-                    refillEnergyAmountLastRechargeDate
-                    __typename
-                  }
-                  bonusLeaderDamageEndAt
-                  bonusLeaderDamageStartAt
-                  bonusLeaderDamageMultiplier
-                  nonce
-                  __typename
-                }
-                """
-            }
-            next_boss_response = requests.post(url, json=next_boss_payload, headers=headers)
-            if next_boss_response.status_code == 200:
-                print("✅ Berhasil ganti bos.", flush=True)
-            else:
-                print("❌ Gagal ganti bos.", flush=True)
-
-
-
-
-          # if current_energy < 200:
-          #   if auto_booster == 'y':
-          #     if config_data['freeBoosts']['currentRefillEnergyAmount'] > 0:
-          #         print("\r🪫 Energy Habis, mengaktifkan Recharge Booster... \n", end="", flush=True)
-          #         activate_energy_recharge_booster(headers)
-          #         continue  # Lanjutkan tapping setelah recharge
-          #     else:
-          #         print("\r🪫 Energy Habis, tidak ada booster tersedia. Beralih ke akun berikutnya.\n", flush=True)
-          #         break
-          #   else:
-
-          #       # if auto_booster == 'y':
-          #       #     print("\r🪫 Energy Habis, tidak ada booster tersedia. Beralih ke akun berikutnya.\n", flush=True)
-          #   # else:
-          #     print("\r🪫 Energy Habis, Beralih ke akun berikutnya.\n", flush=True)
-          #     break  # Keluar dari loop jika tidak ada booster dan energi habis
-
-          # tap_request = make_request(url, headers, tap_payload)
-          tap_count += 1
-        
-          if tap_request.status_code != 200:
-              print("\r❌ Gagal Tapping", flush=True)
-              break  # Keluar dari loop jika terjadi error saat tapping
-          else:
-            print(f"\rTapped ✅\n ")
-
-
-          if auto_upgrade == 'y' and tap_count % upgrade_interval == 0:
-            perform_upgrade("wp", headers)
-            perform_upgrade("energy", headers)
-            perform_upgrade("recharging", headers)
-
-    
-def check_token_validity(token):
-    url = "https://api-gw-tg.memefi.club/graphql"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    query_payload = {
-        "operationName": "QueryTelegramUserMe",
-        "variables": {},
-        "query": """
-        query QueryTelegramUserMe {
-          telegramUserMe {
-            firstName
-            lastName
-            telegramId
-            username
-            referralCode
-            isDailyRewardClaimed
-            referral {
-              username
-              lastName
-              firstName
-              bossLevel
-              coinsAmount
-              __typename
-            }
-            isReferralInitialJoinBonusAvailable
-            league
-            leagueIsOverTop10k
-            leaguePosition
-            _id
-            __typename
-          }
-        }
-        """
-    }
-    response = requests.post(url, json=query_payload, headers=headers)
-    if response.status_code == 200:
-        user_data = response.json()['data']['telegramUserMe']
-        return user_data
-    else:
-        return None
-
-# Mengambil input dari pengguna untuk konfigurasi upgrade otomatis
-while True:
-    auto_upgrade = input("Upgrade Otomatis (default y) ? (y/n): ").strip().lower()
-    if auto_upgrade in ['y', 'n', '']:
-        auto_upgrade = auto_upgrade or 'y'
-        break
-    else:
-        print("Masukkan 'y' atau 'n'.")
-
-upgrade_interval = 10  # Default jeda upgrade
-if auto_upgrade == 'y':
-    while True:
-        try:
-            upgrade_interval_input = input("Jeda Upgrade tiap Tap (default 10)? ").strip()
-            upgrade_interval = int(upgrade_interval_input) if upgrade_interval_input else 10
-            break
-        except ValueError:
-            print("Masukkan angka yang valid.")
-
-# Mengambil input dari pengguna untuk penggunaan booster otomatis
-while True:
-    auto_booster = input("Auto use booster (default n)? (y/n): ").strip().lower()
-    if auto_booster in ['y', 'n', '']:
-        auto_booster = auto_booster or 'n'
-        break
-    else:
-        print("Masukkan 'y' atau 'n'.")
-
-while True:
-    try:
-        jeda_energi_input = input("Jeda pengisian energi (default 10)? ").strip()
-        jeda_energi = int(jeda_energi_input) if jeda_energi_input else 10
-        break
-    except ValueError:
-        print("Masukkan angka yang valid.")
-
-
-print_user_details_once(tokens)
-while True:
-
-    for index, token in enumerate(tokens):
-        perform_operations(index, token, auto_upgrade, auto_booster)
-    
-    clear_console()
-
-    animate_energy_recharge(jeda_energi)  # Tunggu selama 5 detik sebelum memulai siklus berikutnya
-
-
-
+# Jalankan fungsi main() dan simpan hasilnya
+asyncio.run(main())
