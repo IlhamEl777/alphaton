@@ -9,7 +9,7 @@ import time
 from datetime import datetime
 from urllib.parse import unquote
 from utils.headers import headers_set
-from utils.queries import QUERY_USER, QUERY_LOGIN, MUTATION_GAME_PROCESS_TAPS_BATCH
+from utils.queries import QUERY_USER, QUERY_LOGIN, MUTATION_GAME_PROCESS_TAPS_BATCH, QUERY_BOOSTER
 from utils.queries import QUERY_TASK_VERIF, QUERY_TASK_COMPLETED, QUERY_GET_TASK, QUERY_TASK_ID, QUERY_GAME_CONFIG
 
 url = "https://api-gw-tg.memefi.club/graphql"
@@ -99,6 +99,34 @@ async def cek_user(index):
             else:
                 print(response)
                 print(f"❌ Gagal dengan status {response.status}, mencoba lagi...")
+                return None  # Mengembalikan None jika terjadi error
+            
+async def activate_energy_recharge_booster(index,headers):
+    access_token = await fetch(index + 1)
+    url = "https://api-gw-tg.memefi.club/graphql"
+
+    access_token = await fetch(index + 1)
+    headers = headers_set.copy()  # Membuat salinan headers_set agar tidak mengubah variabel global
+    headers['Authorization'] = f'Bearer {access_token}'
+    
+    recharge_booster_payload = {
+            "operationName": "telegramGameActivateBooster",
+            "variables": {"boosterType": "Recharge"},
+            "query": QUERY_BOOSTER
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=recharge_booster_payload) as response:
+            if response.status == 200:
+                response_data = await response.json()
+                if response_data and 'data' in response_data and response_data['data'] and 'telegramGameActivateBooster' in response_data['data']:
+                    new_energy = response_data['data']['telegramGameActivateBooster']['currentEnergy']
+                    print(f"\n🔋 Energi terisi. Energi saat ini: {new_energy}")
+                else:
+                    print("❌ Gagal mengaktifkan Recharge Booster: Data tidak lengkap atau tidak ada.")
+            else:
+                # print(response)
+                print(f"❌ Gagal dengan status {response.status}, mencoba lagi..." + response)
                 return None  # Mengembalikan None jika terjadi error
 
 async def submit_taps(index, json_payload):
@@ -279,7 +307,11 @@ async def main():
             
             print(f"\r[ Akun {index + 1} ] {first_name} {last_name} memeriksa task...", end="", flush=True)
             headers = {'Authorization': f'Bearer {result}'}
-            await check_and_complete_tasks(index, headers)
+            if cek_task_enable == 'y':
+                await check_and_complete_tasks(index, headers)
+            else:
+                time.sleep(2)
+                print(f"\r[ Akun {index + 1} ] {first_name} {last_name} Cek task skipped\n", flush=True)
             stat_result = await cek_stat(index, headers)
 
             if stat_result is not None:
@@ -298,7 +330,21 @@ async def main():
                 energy_used = energy_sekarang - 100
                 damage = user_data['weaponLevel']+1
                 total_tap = energy_used // damage
-                
+  
+                if energy_sekarang < 0.25 * user_data['maxEnergy']:
+                    if auto_booster == 'y':
+                        if user_data['freeBoosts']['currentRefillEnergyAmount'] > 0:
+                            print("\r🪫 Energy Habis, mengaktifkan Recharge Booster... \n", end="", flush=True)
+                            await activate_energy_recharge_booster(index, headers)
+                            continue  # Lanjutkan tapping setelah recharge
+                        else:
+                            print("\r🪫 Energy Habis, tidak ada booster tersedia. Beralih ke akun berikutnya.\n", flush=True)
+                            break
+                    else:
+                        print("\r🪫 Energy Habis, auto booster disable. Beralih ke akun berikutnya.\n", flush=True)
+                        break
+
+
                 # auto_booster = 'y'
                 # print(total_tap)
                 # if total_tap < 5:
@@ -345,6 +391,20 @@ def animate_energy_recharge(duration):
             print(f"\r🪫 Mengisi ulang energi {frame} - Tersisa {remaining_time} detik         ", end="", flush=True)
             time.sleep(0.25)
     print("\r🔋 Pengisian energi selesai.                            ", flush=True)     
+while True:
+    cek_task_enable = input("Cek Task (default n) ? (y/n): ").strip().lower()
+    if cek_task_enable in ['y', 'n', '']:
+        cek_task_enable = cek_task_enable or 'n'
+        break
+    else:
+        print("Masukkan 'y' atau 'n'.")
 
+while True:
+    auto_booster = input("Auto Booster (default n) ? (y/n): ").strip().lower()
+    if auto_booster in ['y', 'n', '']:
+        auto_booster = auto_booster or 'n'
+        break
+    else:
+        print("Masukkan 'y' atau 'n'.")
 # Jalankan fungsi main() dan simpan hasilnya
 asyncio.run(main())
