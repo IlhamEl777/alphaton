@@ -1,6 +1,7 @@
 headers_set = {
-        'Accept': 'application/json',
+        'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.9',
+        "Priority": "u=1, i",
         'Content-Type': 'application/json',
         'Origin': 'https://tg-app.memefi.club',
         'Referer': 'https://tg-app.memefi.club/',
