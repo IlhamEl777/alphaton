@@ -163,7 +163,7 @@ async def main():
                 print(output, end="", flush=True)
 
                 # jika level kurang dari sama dengan 7 dan coin lebih besar sama dengan 128000
-                if level <= 7 and coin >= 128000:
+                if level < 7 and coin >= 128000:
                     output = (
                         f"Coin 🪙  {user_data['balanceCoin']:,} Level🔋 {user_data['limitEnergyLevel']['level']}\n"
                         f"Mencoba menaikkan Level 🔋\n"
